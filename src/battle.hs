@@ -9,6 +9,7 @@ import qualified Data.List as L
 import Data.Monoid
 import System.Random
 import Test.QuickCheck
+import Text.Printf
 
 {- TODO
 
@@ -360,3 +361,23 @@ propScore2 st = let (c1, st')  = deckDeal st
                 bestPossibleScore2Explicit c1 c2 st'' == bestPossibleScore2 c1 c2 st''
 
 -- * Groups
+
+-- | Is g1 a finished group that can definitely beat g2?
+beats :: CardGroup -> CardGroup -> State -> Bool
+beats g1 g2 st = (computeScore (group g1), - groupTimestamp g1) > 
+                 (bestPossibleScore (group g2) st, - groupTimestamp g2)
+-- lower timestamp is better
+
+-- | Add c to g, return new group and new state.
+groupAddCard :: CardGroup -> Card -> State -> (CardGroup, State)
+groupAddCard g c st = (CardGroup { group = c : group g, groupTimestamp = timestamp st },
+                       st { timestamp = timestamp st + 1 })          
+
+-- | Display a card group.
+groupStr :: CardGroup -> Player -> String
+groupStr g p = unwords $ map ((printf "%3s") . show) cards
+    where cards = case p of
+                    PlayerOne -> group g
+                    PlayerTwo -> reverse $ group g
+
+-- * Columns
