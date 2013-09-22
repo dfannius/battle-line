@@ -381,3 +381,27 @@ groupStr g p = unwords $ map ((printf "%3s") . show) cards
                     PlayerTwo -> reverse $ group g
 
 -- * Columns
+
+-- | Can player p claim column col?
+canClaimCol :: Player -> Column -> State -> Bool
+canClaimCol p col st = beats (colGroup col p) (colGroup col (otherPlayer p)) st
+
+-- | Player p tries to claim column # colIdx; return new state if succeeded
+claimCol :: Player -> Int -> State -> Maybe State
+claimCol p colIdx st =
+    let col = colNumber colIdx st in
+    if canClaimCol p col st
+    then Just st { columns = columns st // [(colIdx, (columns st ! colIdx) { claimer = Just p })] }
+    else Nothing
+
+-- | Display a column.
+colStr :: Int -> State -> [Char]
+colStr colIdx st =
+    let col = colNumber colIdx st
+        groupStrs = map (\p -> groupStr (colGroup col p) p) players
+        claimStr = case claimer col of
+                     Just PlayerOne -> " *     "
+                     Just PlayerTwo -> "     * "
+                     Nothing        -> "  [" ++ show colIdx ++ "]  " in
+    (groupStrs !! 0) ++ claimStr ++ (groupStrs !! 1)
+
