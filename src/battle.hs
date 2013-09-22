@@ -13,7 +13,7 @@ import Test.QuickCheck
 {- TODO
 
  + QuickCheck
- - Maybe scores should just be (group, card-sum) tuples rather than a coded integer
+ + Maybe scores should just be (group, card-sum) tuples rather than a coded integer
  - I think some best-score code depends on avail being sorted by decreasing score
  - Actually avail doesn't really make sense as is, since transferring a card from
    the deck to a person's hand shouldn't affect it. But trying to compute a score
@@ -82,38 +82,19 @@ emptyGroup = CardGroup { group=[], groupTimestamp=0 }
 
 -- * GroupType
 -- | A category of three-card poker hand.
-data GroupType = StraightFlush | ThreeOfAKind | Flush | Straight | Random
+data GroupType = Random | Straight | Flush | ThreeOfAKind | StraightFlush
+               deriving (Eq, Ord, Enum, Show, Read)
 
-type Score = Int
-
--- | The baseline score for a given kind of group.
-groupScore :: GroupType -> Score
-groupScore StraightFlush = 500
-groupScore ThreeOfAKind  = 400
-groupScore Flush         = 300
-groupScore Straight      = 200
-groupScore Random        = 100
-
--- | The textual representation of a scoring type.
-groupTypeStr :: Score -> String
-groupTypeStr 500 = "StraightFlush"
-groupTypeStr 400 = "ThreeOfAKind"
-groupTypeStr 300 = "Flush"
-groupTypeStr 200 = "Straight"
-groupTypeStr 100 = "Random"
-
--- | The textual representation of a score.
-scoreText :: Score -> String
-scoreText s = let (groupType, remainder) = s `divMod` 100 in
-              groupTypeStr (s - remainder) ++ " " ++ show remainder
+-- | The score of a hand uses the sum of its ranks as a tiebreaker.
+type Score = (GroupType, Int)
 
 -- | The score of a hand with the given type and ranks.
 handScore :: GroupType -> Rank -> Rank -> Rank -> Score
-handScore g r1 r2 r3 = groupScore g + r1 + r2 + r3
+handScore g r1 r2 r3 = (g, r1 + r2 + r3)
 
 -- | The score of a hand with the given type and ranks, wrapped in a Just.
 justHandScore :: GroupType -> Rank -> Rank -> Rank -> Maybe Score
-justHandScore g r1 r2 r3 = Just $ handScore g r1 r2 r3
+justHandScore g r1 r2 r3 = Just (g, r1 + r2 + r3)
 
 -- * Player
 data Player = PlayerOne | PlayerTwo
@@ -251,7 +232,7 @@ computeScore [x,y,z] =
                          (_,    True, _   ) -> Flush
                          (True, _,    _   ) -> Straight
                          _                  -> Random in
-    groupScore category + sum
+    (category, sum)
                                           
 -- | Given cards x and y on the board, what's the best score the group
 -- of cards could end up being worth?
@@ -290,10 +271,6 @@ bestPossibleScore2 x y st =
                    checkStraight,
                    checkRandom ]
 
-foo av xr xs straightRanks =
-    (\(r1, r2) -> groupScore StraightFlush + xr + r1 + r2) <$>
-    L.find (\(r1, r2) -> cardAvail av r1 xs && cardAvail av r2 xs) straightRanks
-
 bestPossibleScore1 :: Card -> State -> Score
 bestPossibleScore1 x st =
     let av = avail st
@@ -315,15 +292,12 @@ bestPossibleScore1 x st =
         checkStraight =
             L.find (\(r1, r2) -> anyOfRankAvail st r1 && anyOfRankAvail st r2) straightRanks >>=
              (\(r1, r2) -> justHandScore Straight xr r1 r2)
-        checkRandom = Just $ groupScore Random + xr + (sum $ map rank $ topNRanksAvail 2 st)
+        checkRandom = Just (Random, xr + (sum $ map rank $ topNRanksAvail 2 st))
     in firstJust [ checkStraightFlush,
                    checkThreeOfAKind,
                    checkFlush,
                    checkStraight,
                    checkRandom ]
-
-checkStraightFlushOfRank st r =
-            any (\s -> all (rankAvail st s) [r, r-1, r-2]) suits
 
 bestPossibleScore0 :: State -> Score
 bestPossibleScore0 st =
@@ -334,7 +308,7 @@ bestPossibleScore0 st =
         flushScore s =
             let bestRanks = take 3 $ L.filter (rankAvail st s) ranks
             in if (length bestRanks == 3)
-               then Just $ groupScore Flush + sum bestRanks
+               then Just (Flush, sum bestRanks)
                else Nothing
         checkStraightFlush =
             L.find checkStraightFlushOfRank [10,9..3] >>=
@@ -349,13 +323,12 @@ bestPossibleScore0 st =
         checkFlush =
             foldr1 max $ map flushScore suits
         -- TODO: Straight
-        checkRandom = Just (groupScore Random + (sum $ map rank $ take 3 $ avail st))
+        checkRandom = Just (Random, (sum $ map rank $ take 3 $ avail st))
     in firstJust [ checkStraightFlush,
                    checkThreeOfAKind,
                    checkFlush,
                    checkStraight,
-                   checkRandom
-                 ]
+                   checkRandom ]
 
 -- | What's the best possible eventual score for the given group?
 bestPossibleScore :: [Card] -> State -> Score
