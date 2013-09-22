@@ -131,14 +131,16 @@ setColGroup col PlayerOne newGrp = col { groups=(newGrp, snd (groups col)) }
 setColGroup col PlayerTwo newGrp = col { groups=(fst (groups col), newGrp) }
 
 -- * Game State
+type ColIdx = Int
+
 data State =
     State {
-      deck           :: [Card],           -- what's still in the deck?
-      avail          :: [Card],           -- not on the board?
-      timestamp      :: Int,              -- for timestamping Groups
-      columns        :: Array Int Column, -- columns on the board
-      hands          :: ([Card], [Card]), -- cards held by the two players
-      currentPlayer :: Player             -- who's to move
+      deck           :: [Card],              -- what's still in the deck?
+      avail          :: [Card],              -- not on the board?
+      timestamp      :: Int,                 -- for timestamping Groups
+      columns        :: Array ColIdx Column, -- columns on the board
+      hands          :: ([Card], [Card]),    -- cards held by the two players
+      currentPlayer :: Player                -- who's to move
     }
     deriving (Show)
 
@@ -387,7 +389,7 @@ canClaimCol :: Player -> Column -> State -> Bool
 canClaimCol p col st = beats (colGroup col p) (colGroup col (otherPlayer p)) st
 
 -- | Player p tries to claim column # colIdx; return new state if succeeded
-claimCol :: Player -> Int -> State -> Maybe State
+claimCol :: Player -> ColIdx -> State -> Maybe State
 claimCol p colIdx st =
     let col = colNumber colIdx st in
     if canClaimCol p col st
@@ -395,7 +397,7 @@ claimCol p colIdx st =
     else Nothing
 
 -- | Display a column.
-colStr :: Int -> State -> [Char]
+colStr :: ColIdx -> State -> [Char]
 colStr colIdx st =
     let col = colNumber colIdx st
         groupStrs = map (\p -> groupStr (colGroup col p) p) players
@@ -405,3 +407,32 @@ colStr colIdx st =
                      Nothing        -> "  [" ++ show colIdx ++ "]  " in
     (groupStrs !! 0) ++ claimStr ++ (groupStrs !! 1)
 
+data ColumnAddError = ColumnFull | ColumnClaimed
+
+-- | Player p tries to add card c to column colIdx.
+colAddCard :: ColIdx -> Card -> Player -> State -> Either ColumnAddError State
+colAddCard colIdx c p st =
+    let col = colNumber colIdx st in
+    case claimer col of
+      Just _  -> Left ColumnClaimed
+      Nothing -> let grp = colGroup col p in
+                 if lengthAtLeast 3 $ group grp
+                 then Left ColumnFull
+                 else let (grp', st') = groupAddCard grp c st
+                          col' = setColGroup col p grp' in
+                      Right st { columns = columns st // [(colIdx, col')] }
+
+-- * The whole board
+
+-- | Has someone won?
+gameOver :: State -> Maybe Player
+gameOver st =
+    let claimers = map (\c -> claimer $ colNumber c st) [1..9]
+        won p = claimedN p 5 || streakN p 3
+        claimedN p n = (length $ filter (== Just p) claimers) >= n
+        streakN p n = maximum (0 : streaks) > n
+          where streaks = map length $ filter (\(g:gs) -> g == Just p) $ L.group claimers in
+    L.find won [PlayerOne, PlayerTwo]
+
+boardStr :: State -> String
+boardStr st = concat $ L.intersperse "\n" $ map (\c -> colStr c st) [1..9]
